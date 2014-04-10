@@ -1,11 +1,15 @@
-#include <stdio.h>
 #include <assert.h>
+#include <stdio.h>
+#include <string.h>
 
 #include "evhtp.h"
 
-struct expected {
-    char * key;
-    char * val;
+struct test {
+    const char * raw_query;
+    struct expected {
+        char * key;
+        char * val;
+    } exp[10]; /* avoid flexible array member: limit expectations per raw_query */
 };
 
 static int
@@ -34,7 +38,7 @@ test_cmp(evhtp_query_t * query, evhtp_kv_t * kvobj, const char * valstr, struct 
 }
 
 static int
-query_test(const char * raw_query, struct expected expected_data[]) {
+query_test(const char * raw_query, struct expected exp[]) {
     evhtp_query_t   * query;
     struct expected * check;
     int               idx        = 0;
@@ -48,7 +52,7 @@ query_test(const char * raw_query, struct expected expected_data[]) {
         evhtp_kv_t * kvobj  = NULL;
         const char * valstr = NULL;
 
-        check = &expected_data[idx++];
+        check = &exp[idx++];
 
         if (check == NULL || check->key == NULL) {
             break;
@@ -65,35 +69,42 @@ query_test(const char * raw_query, struct expected expected_data[]) {
     return num_errors;
 }
 
-static const char    * t1_str   = "notp&ifp=&othernotp;thenp=;key=val";
-static const char    * t2_str   = "foo=bar;baz=raz&a=1";
-
-static struct expected t1_exp[] = {
-    { "notp",      NULL  },
-    { "ifp",       ""    },
-    { "othernotp", NULL  },
-    { "thenp",     ""    },
-    { "key",       "val" },
-    { NULL,        NULL  }
-};
-
-
-static struct expected t2_exp[] = {
-    { "foo", "bar" },
-    { "baz", "raz" },
-    { "a",   "1"   },
-    { NULL,  NULL  }
+struct test tests[] = {
+    { "notp&ifp=&othernotp;thenp=;key=val", {
+        { "notp",      NULL  },
+        { "ifp",       ""    },
+        { "othernotp", NULL  },
+        { "thenp",     ""    },
+        { "key",       "val" },
+        { NULL,        NULL  }
+    }},
+    { "foo=bar;baz=raz&a=1", {
+        { "foo", "bar" },
+        { "baz", "raz" },
+        { "a",   "1"   },
+        { NULL,  NULL  }
+    }},
+    { "end_empty_string=", {
+        { "end_empty_string", "" },
+        { NULL,            NULL  }
+    }},
+    { "end_null", {
+        { "end_null", NULL },
+        { NULL,       NULL }
+    }}
 };
 
 static void
-test(const char * qstr, struct expected exp[]) {
-    printf("%-50s %s\n", qstr, query_test(qstr, exp) ? "ERROR" : "OK");
+test(const char * raw_query, struct expected exp[]) {
+    printf("%-50s %s\n", raw_query, query_test(raw_query, exp) ? "ERROR" : "OK");
 }
 
 int
 main(int argc, char ** argv) {
-    test(t1_str, t1_exp);
-    test(t2_str, t2_exp);
+    int i;
+
+    for (i = 0; i < sizeof(tests)/sizeof(tests[0]); ++i)
+        test(tests[i].raw_query, tests[i].exp);
 
     return 0;
 }

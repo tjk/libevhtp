@@ -2592,7 +2592,7 @@ query_key:
 
     if (key_idx > 0) {
         evhtp_kvs_add_kv(query_args,
-                         evhtp_kv_new(key_buf, val_idx ? val_buf : NULL, 1, 1));
+                         evhtp_kv_new(key_buf, state == s_query_val ? val_buf : NULL, 1, 1));
     }
 
     free(key_buf);
