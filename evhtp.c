@@ -2468,11 +2468,6 @@ query_key:
                     case '=':
                         state = s_query_val;
                         break;
-                    case '%':
-                        key_buf[key_idx++] = ch;
-                        key_buf[key_idx] = '\0';
-                        state = s_query_key_hex_1;
-                        break;
                     case ';':
                     case '&':
                         /* in this state, we have an empty value, so we just
@@ -2494,36 +2489,6 @@ query_key:
                         break;
                 } /* switch */
                 break;
-            case s_query_key_hex_1:
-                if (!evhtp_is_hex_query_char(ch)) {
-                    /* not hex, so we treat as a normal key */
-                    if ((key_idx + 2) >= len) {
-                        /* we need to insert \%<ch>, but not enough space */
-                        goto error;
-                    }
-
-                    key_buf[key_idx - 1] = '%';
-                    key_buf[key_idx++]   = ch;
-                    key_buf[key_idx]     = '\0';
-                    state = s_query_key;
-                    break;
-                }
-
-                key_buf[key_idx++] = ch;
-                key_buf[key_idx]   = '\0';
-
-                state = s_query_key_hex_2;
-                break;
-            case s_query_key_hex_2:
-                if (!evhtp_is_hex_query_char(ch)) {
-                    goto error;
-                }
-
-                key_buf[key_idx++] = ch;
-                key_buf[key_idx]   = '\0';
-
-                state = s_query_key;
-                break;
             case s_query_val:
                 switch (ch) {
                     case ';':
@@ -2539,50 +2504,12 @@ query_key:
                         state              = s_query_key;
 
                         break;
-                    case '%':
-                        val_buf[val_idx++] = ch;
-                        val_buf[val_idx]   = '\0';
-
-                        state              = s_query_val_hex_1;
-                        break;
                     default:
                         val_buf[val_idx++] = ch;
                         val_buf[val_idx]   = '\0';
 
                         break;
                 }     /* switch */
-                break;
-            case s_query_val_hex_1:
-                if (!evhtp_is_hex_query_char(ch)) {
-                    /* not really a hex val */
-                    if ((val_idx + 2) >= len) {
-                        /* we need to insert \%<ch>, but not enough space */
-                        goto error;
-                    }
-
-
-                    val_buf[val_idx - 1] = '%';
-                    val_buf[val_idx++]   = ch;
-                    val_buf[val_idx]     = '\0';
-
-                    state = s_query_val;
-                    break;
-                }
-
-                val_buf[val_idx++] = ch;
-                val_buf[val_idx]   = '\0';
-
-                state = s_query_val_hex_2;
-                break;
-            case s_query_val_hex_2:
-                if (!evhtp_is_hex_query_char(ch)) {
-                    goto error;
-                }
-
-                val_buf[val_idx++] = ch;
-                val_buf[val_idx]   = '\0';
-
-                state = s_query_val;
                 break;
             default:
                 /* bad state */
@@ -2591,8 +2518,12 @@ query_key:
     }
 
     if (key_idx > 0) {
-        evhtp_kvs_add_kv(query_args,
-                         evhtp_kv_new(key_buf, state == s_query_val ? val_buf : NULL, 1, 1));
+        if (val_idx) {
+            evhtp_kvs_add_kv(query_args, evhtp_kv_new(key_buf, val_buf, 1, 1));
+        } else {
+            evhtp_kvs_add_kv(query_args,
+                    evhtp_kv_new(key_buf, state == s_query_val ? "" : NULL, 1, 1));
+        }
     }
 
     free(key_buf);

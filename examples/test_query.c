@@ -27,6 +27,8 @@ test_cmp(evhtp_query_t * query, evhtp_kv_t * kvobj, const char * valstr, struct 
     }
 
     if (strcmp(kvobj->val, exp->val)) {
+        printf("  expected: '%s'\n", exp->val);
+        printf("  actual:   '%s'\n", kvobj->val);
         return -1;
     }
 
@@ -91,6 +93,12 @@ struct test tests[] = {
     { "end_null", {
         { "end_null", NULL },
         { NULL,       NULL }
+    }},
+    { "hexa=some%20;hexb=bla%0&hexc=%", {
+        { "hexa", "some%20" },
+        { "hexb",   "bla%0" },
+        { "hexc",       "%" },
+        { NULL,       NULL  }
     }}
 };
 
