@@ -59,7 +59,7 @@ static void                 _evhtp_path_free(evhtp_path_t * path);
                                                   HOOK_ARGS(request, hook_name));             \
         }                                                                                     \
                                                                                               \
-        if (HOOK_AVAIL(evhtp_request_get_connection(request), hook_name)) {                   \
+        if (request->conn && HOOK_AVAIL(request->conn, hook_name)) {                          \
             return HOOK_FUNC(request->conn, hook_name) (request, __VA_ARGS__,                 \
                                                         HOOK_ARGS(request->conn, hook_name)); \
         }                                                                                     \
@@ -71,7 +71,7 @@ static void                 _evhtp_path_free(evhtp_path_t * path);
                                                   HOOK_ARGS(request, hook_name));             \
         }                                                                                     \
                                                                                               \
-        if (HOOK_AVAIL(request->conn, hook_name)) {                                           \
+        if (request->conn && HOOK_AVAIL(request->conn, hook_name)) {                          \
             return HOOK_FUNC(request->conn, hook_name) (request,                              \
                                                         HOOK_ARGS(request->conn, hook_name)); \
         }                                                                                     \
@@ -1344,7 +1344,7 @@ _evhtp_create_reply(evhtp_request_t * request, evhtp_res code) {
     char         res_buf[1024];
     int          sres;
 
-    if (htparser_get_multipart(request->conn->parser) == 1) {
+    if (evhtp_request_get_multipart(request) == 1) {
         goto check_proto;
     }
 
@@ -1408,8 +1408,10 @@ check_proto:
         default:
             /* this sometimes happens when a response is made but paused before
              * the method has been parsed */
-            htparser_set_major(request->conn->parser, 1);
-            htparser_set_minor(request->conn->parser, 0);
+            if (request->conn) {
+                htparser_set_major(request->conn->parser, 1);
+                htparser_set_minor(request->conn->parser, 0);
+            }
             break;
     } /* switch */
 
@@ -1421,8 +1423,8 @@ check_proto:
      */
 
     sres = snprintf(res_buf, sizeof(res_buf), "HTTP/%d.%d %d %s\r\n",
-                    htparser_get_major(request->conn->parser),
-                    htparser_get_minor(request->conn->parser),
+                    evhtp_request_get_major(request),
+                    evhtp_request_get_minor(request),
                     code, status_code_to_str(code));
 
     if (sres >= sizeof(res_buf) || sres < 0) {
@@ -1430,8 +1432,8 @@ check_proto:
          * using evbuffer_add_printf().
          */
         evbuffer_add_printf(buf, "HTTP/%d.%d %d %s\r\n",
-                            htparser_get_major(request->conn->parser),
-                            htparser_get_minor(request->conn->parser),
+                            evhtp_request_get_major(request),
+                            evhtp_request_get_minor(request),
                             code, status_code_to_str(code));
     } else {
         /* copy the res_buf using evbuffer_add() instead of add_printf() */
@@ -2008,6 +2010,28 @@ _evhtp_ssl_servername(evhtp_ssl_t * ssl, int * unused, void * arg) {
 htp_method
 evhtp_request_get_method(evhtp_request_t * r) {
     return htparser_get_method(r->conn->parser);
+}
+
+int
+evhtp_request_get_multipart(evhtp_request_t * r) {
+    return r->conn ? htparser_get_multipart(r->conn->parser) : 0;
+}
+
+int
+evhtp_request_get_major(evhtp_request_t * r) {
+    return 1;
+}
+
+int
+evhtp_request_get_minor(evhtp_request_t * r) {
+    switch (r->proto) {
+    case EVHTP_PROTO_11:
+        return 1;
+    case EVHTP_PROTO_10:
+        return 0;
+    default:
+        return r->conn ? htparser_get_minor(r->conn->parser) : 1;
+    }
 }
 
 /**
@@ -2612,17 +2636,18 @@ error:
 
 void
 evhtp_send_reply_start(evhtp_request_t * request, evhtp_res code) {
-    evhtp_connection_t * c;
     evbuf_t            * reply_buf;
 
-    c = evhtp_request_get_connection(request);
-
     if (!(reply_buf = _evhtp_create_reply(request, code))) {
-        evhtp_connection_free(c);
+        if (request->conn) {
+            evhtp_connection_free(request->conn);
+        }
         return;
     }
 
-    bufferevent_write_buffer(c->bev, reply_buf);
+    if (request->conn) {
+        bufferevent_write_buffer(request->conn->bev, reply_buf);
+    }
     evbuffer_free(reply_buf);
 }
 
@@ -2647,18 +2672,21 @@ evhtp_send_reply_end(evhtp_request_t * request) {
 
 void
 evhtp_send_reply(evhtp_request_t * request, evhtp_res code) {
-    evhtp_connection_t * c;
     evbuf_t            * reply_buf;
 
-    c = evhtp_request_get_connection(request);
     request->finished = 1;
+    request->status = code;
 
     if (!(reply_buf = _evhtp_create_reply(request, code))) {
-        evhtp_connection_free(request->conn);
+        if (request->conn) {
+            evhtp_connection_free(request->conn);
+        }
         return;
     }
 
-    bufferevent_write_buffer(evhtp_connection_get_bev(c), reply_buf);
+    if (request->conn) {
+        bufferevent_write_buffer(evhtp_connection_get_bev(request->conn), reply_buf);
+    }
     evbuffer_free(reply_buf);
 }
 

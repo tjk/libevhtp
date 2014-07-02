@@ -958,6 +958,9 @@ const char * evhtp_header_find(evhtp_headers_t * headers, const char * key);
  * @return htp_method enum
  */
 htp_method evhtp_request_get_method(evhtp_request_t * r);
+int evhtp_request_get_multipart(evhtp_request_t * r);
+int evhtp_request_get_major(evhtp_request_t * r);
+int evhtp_request_get_minor(evhtp_request_t * r);
 
 void       evhtp_connection_pause(evhtp_connection_t * connection);
 void       evhtp_connection_resume(evhtp_connection_t * connection);
